@@ -108,3 +108,45 @@ jobs:
         run: |
           echo "Deployment status: ${{ job.status }}"
           # Add notification logic here (Slack, Discord, etc.)
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install docker-compose -y
+
+      - name: Build and start all services
+        run: |
+          docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+
+      - name: Wait for webapp to be healthy
+        run: |
+          for i in {1..30}; do
+            if curl -fs http://localhost:3000/api/health; then
+              echo "Webapp is healthy!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Webapp did not become healthy in time" >&2
+          docker-compose logs
+          exit 1
+
+      - name: Run tests
+        run: |
+          docker exec webapp-demo npm test --prefix /app
+
+      - name: Show running containers
+        run: docker ps -a
+
+      - name: Show logs if failed
+        if: failure()
+        run: docker-compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down

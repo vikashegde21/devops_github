@@ -8,7 +8,7 @@ echo "🏗️  Building Docker image..."
 docker build -t webapp-demo:latest .
 
 # Tag for registry
-docker tag webapp-demo:latest ghcr.io/youruservikashegde21name/webapp-demo:latest
+docker tag webapp-demo:latest ghcr.io/vikashegde21/webapp-demo:latest
 
 echo "✅ Build completed successfully!"
 
