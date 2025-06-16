@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps Demo App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        h1 { text-align: center; margin-bottom: 30px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .healthy { background: rgba(76, 175, 80, 0.3); }
+        .info { background: rgba(33, 150, 243, 0.3); }
+        button {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background: rgba(255,255,255,0.3); }
+        #output { margin-top: 20px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 DevOps Demo Application</h1>
+        <p>This application demonstrates a complete DevOps pipeline with:</p>
+        <ul>
+            <li>Docker containerization</li>
+            <li>GitHub repository storage</li>
+            <li>CI/CD automation</li>
+            <li>Prometheus monitoring</li>
+            <li>Grafana dashboards</li>
+        </ul>
+        
+        <div>
+            <button onclick="checkHealth()">Check Health</button>
+            <button onclick="getInfo()">Get App Info</button>
+            <button onclick="loadTest()">Load Test</button>
+        </div>
+        
+        <div id="output"></div>
+    </div>
+
+    <script>
+        async function checkHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                displayResult('Health Check', data, 'healthy');
+            } catch (error) {
+                displayResult('Health Check', { error: error.message }, 'error');
+            }
+        }
+
+        async function getInfo() {
+            try {
+                const response = await fetch('/api/info');
+                const data = await response.json();
+                displayResult('App Info', data, 'info');
+            } catch (error) {
+                displayResult('App Info', { error: error.message }, 'error');
+            }
+        }
+
+        async function loadTest() {
+            displayResult('Load Test', { message: 'Running 10 concurrent requests...' }, 'info');
+            
+            const promises = [];
+            for (let i = 0; i < 10; i++) {
+                promises.push(fetch('/api/health'));
+            }
+            
+            try {
+                await Promise.all(promises);
+                displayResult('Load Test', { message: 'Completed 10 requests successfully!' }, 'healthy');
+            } catch (error) {
+                displayResult('Load Test', { error: error.message }, 'error');
+            }
+        }
+
+        function displayResult(title, data, type) {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${title}:</strong><br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+    </script>
+</body>
+</html>

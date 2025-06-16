@@ -1,0 +1,35 @@
+{
+  "id": null,
+  "title": "WebApp Monitoring Dashboard",
+  "tags": ["webapp", "monitoring"],
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "HTTP Requests Total",
+      "targets": [
+        {
+          "expr": "sum by (route) (http_requests_total)",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "type": "graph",
+      "title": "Request Duration (seconds)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "95th percentile {{route}}"
+        }
+      ],
+      "datasource": "Prometheus",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+    }
+  ]
+}
