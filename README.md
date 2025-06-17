@@ -6,7 +6,7 @@ A Node.js web application with integrated monitoring and CI/CD pipeline using Do
 - Node.js Express API with health checks and metrics
 - Dockerized for easy deployment
 - Nginx reverse proxy (optional)
-- Prometheus & Grafana for monitoring
+- Prometheus, Grafana, Node Exporter, cAdvisor, and Alertmanager for monitoring
 - Automated CI/CD with GitHub Actions
 - Security audit and best practices
 
@@ -20,11 +20,11 @@ A Node.js web application with integrated monitoring and CI/CD pipeline using Do
 ├── monitoring/           # Monitoring stack
 │   ├── prometheus.yml    # Prometheus config
 │   ├── alertmanager.yml  # Alertmanager config
-│   └── grafana/          # Grafana dashboards
+│   ├── grafana/          # Grafana dashboards
+│   └── docker-compose.monitoring.yml # Monitoring compose file
 ├── scripts/              # Build, deploy, health-check scripts
 ├── Dockerfile            # Multi-stage Docker build
 ├── docker-compose.yml    # Main app compose file
-├── monitoring/docker-compose.monitoring.yml # Monitoring compose file
 └── .github/workflows/ci-cd.yml # GitHub Actions workflow
 ```
 
@@ -60,10 +60,29 @@ A Node.js web application with integrated monitoring and CI/CD pipeline using Do
    - App: [http://localhost:3000](http://localhost:3000)
    - Prometheus: [http://localhost:9090](http://localhost:9090)
    - Grafana: [http://localhost:3001](http://localhost:3001) (admin/admin123)
+   - Node Exporter: [http://localhost:9100/metrics](http://localhost:9100/metrics)
+   - cAdvisor: [http://localhost:8080](http://localhost:8080)
+   - Alertmanager: [http://localhost:9093](http://localhost:9093)
 
 ### CI/CD Pipeline
 - Automated with GitHub Actions: runs tests, builds Docker images, and can push to GitHub Container Registry.
 - See `.github/workflows/ci-cd.yml` for details.
+
+### Deploying to AWS EC2 (Example)
+1. Launch an EC2 instance (Ubuntu recommended) and open ports 22, 3000, 9090, 3001, 9100, 8080, 9093.
+2. SSH into your instance and install Docker & Docker Compose.
+3. Clone your repo and pull images:
+   ```sh
+   git clone https://github.com/<your-username>/<your-repo>.git
+   cd <your-repo>
+   docker-compose pull
+   ```
+4. Start the app and monitoring stack:
+   ```sh
+   docker-compose up -d
+   docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+   ```
+5. Access the services using your EC2 public IP and the ports above.
 
 ## Security & Best Practices
 - Uses non-root Docker user
