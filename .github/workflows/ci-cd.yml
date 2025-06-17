@@ -124,7 +124,7 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/<your-repo>
+            cd /home/ubuntu/devops_github
             git pull
             docker-compose pull
             docker-compose up -d
@@ -133,7 +133,7 @@ jobs:
         run: |
           echo "Running health checks..."
           # Add health check commands here
-          # curl -f http://your-app-url/api/health || exit 1
+          curl -f http://ec2-15-207-222-50.ap-south-1.compute.amazonaws.com:3000/api/health || exit 1
       - name: Notify deployment
         if: always()
         run: |
