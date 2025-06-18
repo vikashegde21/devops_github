@@ -117,25 +117,65 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/devops_github
-            git pull
+            cd /home/ec2-user/devops_github
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Login to Docker registry (if using private images)
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest images
             docker-compose pull
+            
+            # Stop existing containers gracefully
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
+            
+            # Start services
             docker-compose up -d
             docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+            
+            # Clean up unused images
+            docker image prune -f
+            
+      - name: Wait for deployment to be ready
+        run: |
+          echo "Waiting for deployment to be ready..."
+          sleep 30
+          
       - name: Health check
         run: |
           echo "Running health checks..."
-          # Add health check commands here
-          curl -f http://ec2-15-207-222-50.ap-south-1.compute.amazonaws.com:3000/api/health || exit 1
+          max_attempts=10
+          attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f http://${{ secrets.EC2_HOST }}:3000/api/health; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Health check failed, attempt $attempt/$max_attempts"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          
+          echo "Health check failed after $max_attempts attempts"
+          exit 1
+          
       - name: Notify deployment
         if: always()
         run: |
-          echo "Deployment status: ${{ job.status }}"
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi
           # Add notification logic here (Slack, Discord, etc.)
