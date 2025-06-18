@@ -196,7 +196,7 @@ jobs:
             docker compose logs --tail=20
             echo "Pulling latest code from GitHub..."
             #git reset --hard HEAD  # optional: force clean local state
-            git pull origin main
+            git pull origin master
             echo "Rebuilding and restarting containers..."
             docker compose down
             docker compose up -d --build
