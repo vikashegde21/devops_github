@@ -190,16 +190,10 @@ jobs:
           echo "❌ Health check failed after $max_attempts attempts"
           echo "Checking final status..."
           ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
+            set -e
             cd /home/ec2-user/devops_github
             echo "=== Final Container Logs ==="
             docker-compose logs --tail=20
-          '
-          exit 1
-
-
-          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
-            set -e
-            cd /home/ec2-user/devops_github
             echo "Pulling latest code from GitHub..."
             #git reset --hard HEAD  # optional: force clean local state
             git pull origin main
@@ -207,7 +201,7 @@ jobs:
             docker compose down
             docker compose up -d --build
           '
-
+          exit 1
       - name: Notify deployment
         if: always()
         run: |
