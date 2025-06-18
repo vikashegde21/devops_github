@@ -167,7 +167,7 @@ jobs:
             echo "=== Port Usage ==="
             sudo netstat -tlnp | grep 3000
             echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker-compose ps
+            cd /home/ec2-user/devops_github && docker compose ps
           '
 
           max_attempts=10
@@ -193,7 +193,7 @@ jobs:
             set -e
             cd /home/ec2-user/devops_github
             echo "=== Final Container Logs ==="
-            docker-compose logs --tail=20
+            docker compose logs --tail=20
             echo "Pulling latest code from GitHub..."
             #git reset --hard HEAD  # optional: force clean local state
             git pull origin main
