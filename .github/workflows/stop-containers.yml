@@ -1,0 +1,35 @@
+name: Stop and Clean Containers
+
+on:
+  workflow_dispatch:  # Allows you to trigger this manually from GitHub UI
+
+jobs:
+  stop-containers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Stop and Remove Docker Containers on EC2
+        run: |
+          echo "Connecting to EC2 to stop and clean up containers..."
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+            echo "🛑 Stopping all running containers..."
+            docker ps -q | xargs -r docker stop
+
+            echo "🧹 Removing all stopped containers..."
+            docker ps -a -q | xargs -r docker rm
+
+            echo "🧽 Removing unused images..."
+            docker image prune -af
+
+            echo "🧼 Removing dangling volumes..."
+            docker volume prune -f
+
+            echo "✅ Cleanup complete!"
+          EOF
