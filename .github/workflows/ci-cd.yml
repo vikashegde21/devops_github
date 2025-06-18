@@ -154,18 +154,6 @@ jobs:
       - name: Health check
         run: |
           echo "Running health checks..."
-          echo "Checking if application is accessible..."
-          
-          # First, let's see what's running on the EC2
-          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
-            echo "=== Container Status ==="
-            docker ps
-            echo "=== Port Usage ==="
-            sudo netstat -tlnp | grep 3000
-            echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker-compose ps
-          '
-          
           max_attempts=10
           attempt=1
           
@@ -178,19 +166,34 @@ jobs:
               echo "✅ Application is responding (health endpoint may not exist)"
               exit 0
             fi
-            echo "❌ Health check failed, attempt $attempt/$max_attempts"
-            sleep 10
+            echo "❌ Health check failed, retrying in 15 seconds..."
+            sleep 15
             attempt=$((attempt + 1))
           done
           
           echo "❌ Health check failed after $max_attempts attempts"
-          echo "Checking final status..."
-          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
-            cd /home/ec2-user/devops_github
-            echo "=== Final Container Logs ==="
-            docker-compose logs --tail=20
-          '
+          echo "This might indicate:"
+          echo "- Application is still starting up"
+          echo "- Port 3000 is not accessible"
+          echo "- Security group rules need to be checked"
           exit 1
+          
+      - name: Debug deployment status
+        if: failure()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=== Container Status ==="
+            docker ps
+            echo "=== Docker Compose Status ==="
+            cd /home/ec2-user/devops_github && docker-compose ps
+            echo "=== Recent Logs ==="
+            cd /home/ec2-user/devops_github && docker-compose logs --tail=10
+            echo "=== Port Usage ==="
+            sudo netstat -tlnp | grep 3000 || echo "No process on port 3000"
           
       - name: Notify deployment
         if: always()
