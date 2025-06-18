@@ -1,0 +1,27 @@
+- name: Notify Discord
+  if: always()
+  run: |
+    STATUS="✅ Deployment successful!"
+    COLOR="65280"
+    if [ "${{ job.status }}" != "success" ]; then
+      STATUS="❌ Deployment failed!"
+      COLOR="16711680"
+    fi
+
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
+
+    curl -H "Content-Type: application/json" \
+         -X POST \
+         -d "{
+           \"embeds\": [{
+             \"title\": \"${STATUS}\",
+             \"color\": ${COLOR},
+             \"fields\": [
+               {\"name\": \"Workflow\", \"value\": \"${{ github.workflow }}\", \"inline\": true},
+               {\"name\": \"Job\", \"value\": \"${{ github.job }}\", \"inline\": true},
+               {\"name\": \"Status\", \"value\": \"${{ job.status }}\"},
+               {\"name\": \"Time\", \"value\": \"${TIMESTAMP}\"}
+             ]
+           }]
+         }" \
+         ${{ secrets.DISCORD_WEBHOOK_URL }}
