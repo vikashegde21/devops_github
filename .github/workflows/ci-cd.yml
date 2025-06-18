@@ -201,7 +201,7 @@ jobs:
             set -e
             cd /home/ec2-user/devops_github
             echo "Pulling latest code from GitHub..."
-            git reset --hard HEAD  # optional: force clean local state
+            #git reset --hard HEAD  # optional: force clean local state
             git pull origin main
             echo "Rebuilding and restarting containers..."
             docker compose down
