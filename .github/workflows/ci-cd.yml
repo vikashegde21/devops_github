@@ -196,6 +196,18 @@ jobs:
           '
           exit 1
 
+
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
+            set -e
+            cd /home/ec2-user/devops_github
+            echo "Pulling latest code from GitHub..."
+            git reset --hard HEAD  # optional: force clean local state
+            git pull origin main
+            echo "Rebuilding and restarting containers..."
+            docker compose down
+            docker compose up -d --build
+          '
+
       - name: Notify deployment
         if: always()
         run: |
