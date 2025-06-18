@@ -155,9 +155,13 @@ jobs:
         run: |
           echo "Running health checks..."
           echo "Checking if application is accessible..."
-          
-          # First, let's see what's running on the EC2
-          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
+
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
             echo "=== Container Status ==="
             docker ps
             echo "=== Port Usage ==="
@@ -165,10 +169,10 @@ jobs:
             echo "=== Docker Compose Status ==="
             cd /home/ec2-user/devops_github && docker-compose ps
           '
-          
+
           max_attempts=10
           attempt=1
-          
+
           while [ $attempt -le $max_attempts ]; do
             echo "Health check attempt $attempt/$max_attempts"
             if curl -f http://${{ secrets.EC2_HOST }}:3000/api/health; then
@@ -182,16 +186,16 @@ jobs:
             sleep 10
             attempt=$((attempt + 1))
           done
-          
+
           echo "❌ Health check failed after $max_attempts attempts"
           echo "Checking final status..."
-          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
             cd /home/ec2-user/devops_github
             echo "=== Final Container Logs ==="
             docker-compose logs --tail=20
           '
           exit 1
-          
+
       - name: Notify deployment
         if: always()
         run: |
