@@ -128,7 +128,7 @@ jobs:
             cd /home/ec2-user/devops_github
             
             # Pull latest code
-            git pull origin main
+            git pull origin master
             
             # Login to Docker registry (if using private images)
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
