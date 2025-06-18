@@ -158,42 +158,17 @@ jobs:
           attempt=1
           
           while [ $attempt -le $max_attempts ]; do
-            echo "Health check attempt $attempt/$max_attempts"
             if curl -f http://${{ secrets.EC2_HOST }}:3000/api/health; then
-              echo "✅ Health check passed!"
-              exit 0
-            elif curl -f http://${{ secrets.EC2_HOST }}:3000; then
-              echo "✅ Application is responding (health endpoint may not exist)"
+              echo "Health check passed!"
               exit 0
             fi
-            echo "❌ Health check failed, retrying in 15 seconds..."
-            sleep 15
+            echo "Health check failed, attempt $attempt/$max_attempts"
+            sleep 10
             attempt=$((attempt + 1))
           done
           
-          echo "❌ Health check failed after $max_attempts attempts"
-          echo "This might indicate:"
-          echo "- Application is still starting up"
-          echo "- Port 3000 is not accessible"
-          echo "- Security group rules need to be checked"
+          echo "Health check failed after $max_attempts attempts"
           exit 1
-          
-      - name: Debug deployment status
-        if: failure()
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            echo "=== Container Status ==="
-            docker ps
-            echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker-compose ps
-            echo "=== Recent Logs ==="
-            cd /home/ec2-user/devops_github && docker-compose logs --tail=10
-            echo "=== Port Usage ==="
-            sudo netstat -tlnp | grep 3000 || echo "No process on port 3000"
           
       - name: Notify deployment
         if: always()
