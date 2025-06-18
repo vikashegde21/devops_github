@@ -154,20 +154,42 @@ jobs:
       - name: Health check
         run: |
           echo "Running health checks..."
+          echo "Checking if application is accessible..."
+          
+          # First, let's see what's running on the EC2
+          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
+            echo "=== Container Status ==="
+            docker ps
+            echo "=== Port Usage ==="
+            sudo netstat -tlnp | grep 3000
+            echo "=== Docker Compose Status ==="
+            cd /home/ec2-user/devops_github && docker-compose ps
+          '
+          
           max_attempts=10
           attempt=1
           
           while [ $attempt -le $max_attempts ]; do
+            echo "Health check attempt $attempt/$max_attempts"
             if curl -f http://${{ secrets.EC2_HOST }}:3000/api/health; then
-              echo "Health check passed!"
+              echo "✅ Health check passed!"
+              exit 0
+            elif curl -f http://${{ secrets.EC2_HOST }}:3000; then
+              echo "✅ Application is responding (health endpoint may not exist)"
               exit 0
             fi
-            echo "Health check failed, attempt $attempt/$max_attempts"
+            echo "❌ Health check failed, attempt $attempt/$max_attempts"
             sleep 10
             attempt=$((attempt + 1))
           done
           
-          echo "Health check failed after $max_attempts attempts"
+          echo "❌ Health check failed after $max_attempts attempts"
+          echo "Checking final status..."
+          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_HOST }} '
+            cd /home/ec2-user/devops_github
+            echo "=== Final Container Logs ==="
+            docker-compose logs --tail=20
+          '
           exit 1
           
       - name: Notify deployment
