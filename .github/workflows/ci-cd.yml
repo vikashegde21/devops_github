@@ -229,6 +229,9 @@ jobs:
                      {\"name\": \"Web App\", \"value\": \"http://${EC2_IP}:3000\"},
                      {\"name\": \"Grafana\", \"value\": \"http://${EC2_IP}:3001\"},
                      {\"name\": \"Prometheus\", \"value\": \"http://${EC2_IP}:9090\"}
+                     {\"name\": \"Node Exporter\", \"value\": \"http://${EC2_IP}:9100\"}
+                     {\"name\": \"cAdvisor\", \"value\": \"http://${EC2_IP}:8080\"}
+                     {\"name\": \"Alertmanager\", \"value\": \"http://${EC2_IP}:9093\"}
                    ]
                  }]
                }" \
