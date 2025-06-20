@@ -140,8 +140,11 @@ jobs:
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
             
             # Start services
-            docker-compose up -d
-            docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
+
+            # Show status
+            docker ps
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml ps -a
             
             # Clean up unused images
             docker image prune -f
