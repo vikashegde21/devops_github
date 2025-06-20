@@ -214,10 +214,10 @@ jobs:
             STATUS="❌ Deployment failed!"
             COLOR="16711680"
           fi
-
+      
           TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
-          EC2_IP=${{ secrets.EC2_HOST }}
-
+          EC2_IP="${{ secrets.EC2_HOST }}"
+      
           curl -H "Content-Type: application/json" \
                -X POST \
                -d "{
@@ -229,12 +229,12 @@ jobs:
                      {\"name\": \"Job\", \"value\": \"${{ github.job }}\", \"inline\": true},
                      {\"name\": \"Status\", \"value\": \"${{ job.status }}\"},
                      {\"name\": \"Time\", \"value\": \"${TIMESTAMP}\"},
-                     {\"name\": \"Web App\", \"value\": \"http://${EC2_HOST}:3000\"},
-                     {\"name\": \"Grafana\", \"value\": \"http://${EC2_HOST}:3001\"},
-                     {\"name\": \"Prometheus\", \"value\": \"http://${EC2_HOST}:9090\"},
-                     {\"name\": \"Node Exporter\", \"value\": \"http://${EC2_HOST}:9100\"},
-                     {\"name\": \"cAdvisor\", \"value\": \"http://${EC2_HOST}:8080\"},
-                     {\"name\": \"Alertmanager\", \"value\": \"http://${EC2_HOST}:9093\"},
+                     {\"name\": \"Web App\", \"value\": \"http://${EC2_IP}:3000\"},
+                     {\"name\": \"Grafana\", \"value\": \"http://${EC2_IP}:3001\"},
+                     {\"name\": \"Prometheus\", \"value\": \"http://${EC2_IP}:9090\"},
+                     {\"name\": \"Node Exporter\", \"value\": \"http://${EC2_IP}:9100\"},
+                     {\"name\": \"cAdvisor\", \"value\": \"http://${EC2_IP}:8080\"},
+                     {\"name\": \"Alertmanager\", \"value\": \"http://${EC2_IP}:9093\"}
                    ]
                  }]
                }" \
