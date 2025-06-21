@@ -18,6 +18,8 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - monitoring
+    restart: unless-stopped
+
 
   grafana:
     image: grafana/grafana:latest
@@ -33,6 +35,8 @@ services:
       - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
     networks:
       - monitoring
+    restart: unless-stopped
+
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -50,6 +54,8 @@ services:
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     networks:
       - monitoring
+    restart: unless-stopped
+
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
@@ -63,6 +69,8 @@ services:
       - /var/lib/docker:/var/lib/docker:ro
     networks:
       - monitoring
+    restart: unless-stopped
+
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -73,6 +81,8 @@ services:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     networks:
       - monitoring
+    restart: unless-stopped
+
 
 networks:
   monitoring:
