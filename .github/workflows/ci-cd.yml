@@ -68,7 +68,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
+        run: docker compose -f docker-compose.yml -f monitoring/docker compose.monitoring.yml down
 
   build-and-push-image:
     needs: build-and-test
@@ -140,7 +140,7 @@ jobs:
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
             
             # Start services
-            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
+            docker compose -f docker-compose.yml -f monitoring/docker compose.monitoring.yml up -d --build
 
             # Show status
             docker ps
