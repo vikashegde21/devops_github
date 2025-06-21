@@ -1,4 +1,0 @@
-on: [push]
-jobs:
-  codeql-analysis:
-    uses: github/codeql-action/init@v2
