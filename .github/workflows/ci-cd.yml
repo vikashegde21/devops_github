@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-    branches: [ main, master ] 
+    branches: [ main, master ]
 
 env:
   REGISTRY: ghcr.io
@@ -68,7 +68,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
+        run: docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
 
   build-and-push-image:
     needs: build-and-test
@@ -117,7 +117,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -130,21 +130,19 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker-compose pull
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
-            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
+            docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
             docker ps
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml ps -a
             docker image prune -f
-            
+
       - name: Wait for deployment to be ready
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 30
-          
+
       - name: Health check
         run: |
           echo "Running health checks..."
-          echo "Checking if application is accessible..."
-
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
@@ -156,7 +154,7 @@ jobs:
             echo "=== Port Usage ==="
             sudo netstat -tlnp | grep 3000
             echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker-compose ps
+            cd /home/ec2-user/devops_github && docker compose ps
           '
 
           max_attempts=10
@@ -177,32 +175,31 @@ jobs:
           done
 
           echo "❌ Health check failed after $max_attempts attempts"
-          echo "Checking final status..."
           ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
             set -e
             cd /home/ec2-user/devops_github
             echo "=== Final Container Logs ==="
-            docker-compose logs --tail=20
+            docker compose logs --tail=20
             git pull origin master
-            docker-compose down
-            docker-compose up -d --build
+            docker compose down
+            docker compose up -d --build
           '
           exit 1
 
-- name: Notify Discord with Deployment Status
-  if: always()
-  run: |
-    STATUS="✅ Deployment successful!"
-    COLOR="65280"
-    if [ "${{ job.status }}" != "success" ]; then
-      STATUS="❌ Deployment failed!"
-      COLOR="16711680"
-    fi
+      - name: Notify Discord with Deployment Status
+        if: always()
+        run: |
+          STATUS="✅ Deployment successful!"
+          COLOR="65280"
+          if [ "${{ job.status }}" != "success" ]; then
+            STATUS="❌ Deployment failed!"
+            COLOR="16711680"
+          fi
 
-    TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
-    EC2_IP="${{ secrets.EC2_HOST }}"
+          TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
+          EC2_IP="${{ secrets.EC2_HOST }}"
 
-    PAYLOAD=$(cat <<EOF
+          PAYLOAD=$(cat <<EOF
 {
   "embeds": [{
     "title": "${STATUS}",
@@ -224,6 +221,6 @@ jobs:
 EOF
 )
 
-    curl -H "Content-Type: application/json" \
-         -X POST \
-         -d "${PAYLOAD}" "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "${PAYLOAD}" "${{ secrets.DISCORD_WEBHOOK_URL }}"
