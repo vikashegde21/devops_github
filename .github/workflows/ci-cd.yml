@@ -200,26 +200,28 @@ jobs:
           EC2_IP="${{ secrets.EC2_HOST }}"
 
           PAYLOAD=$(cat <<EOF
-{
-  "embeds": [{
-    "title": "${STATUS}",
-    "color": ${COLOR},
-    "fields": [
-      { "name": "Workflow", "value": "${{ github.workflow }}", "inline": true },
-      { "name": "Job", "value": "${{ github.job }}", "inline": true },
-      { "name": "Status", "value": "${{ job.status }}" },
-      { "name": "Time", "value": "${TIMESTAMP}" },
-      { "name": "Web App", "value": "http://${EC2_IP}:3000" },
-      { "name": "Grafana", "value": "http://${EC2_IP}:3001" },
-      { "name": "Prometheus", "value": "http://${EC2_IP}:9090" },
-      { "name": "Node Exporter", "value": "http://${EC2_IP}:9100" },
-      { "name": "cAdvisor", "value": "http://${EC2_IP}:8080" },
-      { "name": "Alertmanager", "value": "http://${EC2_IP}:9093" }
-    ]
-  }]
-}
-EOF
-)
+          {
+            "embeds": [
+              {
+                "title": "${STATUS}",
+                "color": ${COLOR},
+                "fields": [
+                  { "name": "Workflow", "value": "${{ github.workflow }}", "inline": true },
+                  { "name": "Job", "value": "${{ github.job }}", "inline": true },
+                  { "name": "Status", "value": "${{ job.status }}" },
+                  { "name": "Time", "value": "${TIMESTAMP}" },
+                  { "name": "Web App", "value": "http://${EC2_IP}:3000" },
+                  { "name": "Grafana", "value": "http://${EC2_IP}:3001" },
+                  { "name": "Prometheus", "value": "http://${EC2_IP}:9090" },
+                  { "name": "Node Exporter", "value": "http://${EC2_IP}:9100" },
+                  { "name": "cAdvisor", "value": "http://${EC2_IP}:8080" },
+                  { "name": "Alertmanager", "value": "http://${EC2_IP}:9093" }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
 
           curl -H "Content-Type: application/json" \
                -X POST \
