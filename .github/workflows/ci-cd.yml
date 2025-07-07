@@ -68,7 +68,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose -f docker-compose.yml -f monitoring/docker compose.monitoring.yml down
+        run: docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
 
   build-and-push-image:
     needs: build-and-test
@@ -126,27 +126,13 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ec2-user/devops_github
-            
-            # Pull latest code
             git pull origin master
-            
-            # Login to Docker registry (if using private images)
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
-            # Pull latest images
             docker-compose pull
-            
-            # Stop existing containers gracefully
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
-            
-            # Start services
-            docker compose -f docker-compose.yml -f monitoring/docker compose.monitoring.yml up -d --build
-
-            # Show status
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
             docker ps
             docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml ps -a
-            
-            # Clean up unused images
             docker image prune -f
             
       - name: Wait for deployment to be ready
@@ -170,7 +156,7 @@ jobs:
             echo "=== Port Usage ==="
             sudo netstat -tlnp | grep 3000
             echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker compose ps
+            cd /home/ec2-user/devops_github && docker-compose ps
           '
 
           max_attempts=10
@@ -196,15 +182,13 @@ jobs:
             set -e
             cd /home/ec2-user/devops_github
             echo "=== Final Container Logs ==="
-            docker compose logs --tail=20
-            echo "Pulling latest code from GitHub..."
-            #git reset --hard HEAD  # optional: force clean local state
+            docker-compose logs --tail=20
             git pull origin master
-            echo "Rebuilding and restarting containers..."
-            docker compose down
-            docker compose up -d --build
+            docker-compose down
+            docker-compose up -d --build
           '
           exit 1
+
       - name: Notify Discord with Deployment Status
         if: always()
         run: |
