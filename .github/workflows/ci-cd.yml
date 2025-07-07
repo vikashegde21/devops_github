@@ -1,8 +1,8 @@
-name: CI/CD Pipeline for monitoring
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ] 
 
@@ -221,38 +221,22 @@ jobs:
           curl -H "Content-Type: application/json" \
                -X POST \
                -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
-      - name: Notify Discord with Deployment Status
-        if: always()
-        run: |
-          STATUS="✅ Deployment successful!"
-          COLOR="65280"
-          if [ "${{ job.status }}" != "success" ]; then
-            STATUS="❌ Deployment failed!"
-            COLOR="16711680"
-          fi
-
-          TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
-          EC2_IP="${{ secrets.EC2_HOST }}"
-
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
-{
-  "embeds": [{
-    "title": "${STATUS}",
-    "color": ${COLOR},
-    "fields": [
-      { "name": "Workflow", "value": "${{ github.workflow }}", "inline": true },
-      { "name": "Job", "value": "${{ github.job }}", "inline": true },
-      { "name": "Status", "value": "${{ job.status }}" },
-      { "name": "Time", "value": "${TIMESTAMP}" },
-      { "name": "Web App", "value": "http://${EC2_IP}:3000" },
-      { "name": "Grafana", "value": "http://${EC2_IP}:3001" },
-      { "name": "Prometheus", "value": "http://${EC2_IP}:9090" },
-      { "name": "Node Exporter", "value": "http://${EC2_IP}:9100" },
-      { "name": "cAdvisor", "value": "http://${EC2_IP}:8080" },
-      { "name": "Alertmanager", "value": "http://${EC2_IP}:9093" }
-    ]
-  }]
-}
-EOF
+      {
+        "embeds": [{
+          "title": "${STATUS}",
+          "color": ${COLOR},
+          "fields": [
+            { "name": "Workflow", "value": "${{ github.workflow }}", "inline": true },
+            { "name": "Job", "value": "${{ github.job }}", "inline": true },
+            { "name": "Status", "value": "${{ job.status }}" },
+            { "name": "Time", "value": "${TIMESTAMP}" },
+            { "name": "Web App", "value": "http://${EC2_IP}:3000" },
+            { "name": "Grafana", "value": "http://${EC2_IP}:3001" },
+            { "name": "Prometheus", "value": "http://${EC2_IP}:9090" },
+            { "name": "Node Exporter", "value": "http://${EC2_IP}:9100" },
+            { "name": "cAdvisor", "value": "http://${EC2_IP}:8080" },
+            { "name": "Alertmanager", "value": "http://${EC2_IP}:9093" }
+          ]
+        }]
+      }
+      EOF
