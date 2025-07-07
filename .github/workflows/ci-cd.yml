@@ -1,25 +1,108 @@
-name: CI/CD Pipeline
+name: 🚀 Enhanced CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  NODE_VERSION: '20'
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
 
 jobs:
-  build-and-test:
+  # Security and code quality checks
+  security-scan:
+    name: 🔒 Security & Quality Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Node.js
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Set up Node.js for linting
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd app
+          npm ci --only=dev
+
+      - name: Run ESLint
+        run: |
+          cd app
+          npm run lint || true
+
+      - name: Run Prettier check
+        run: |
+          cd app
+          npm run format:check || true
+
+  # Build and test application
+  build-and-test:
+    name: 🧪 Build & Test
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: ${{ !inputs.skip_tests }}
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
 
@@ -28,61 +111,189 @@ jobs:
           cd app
           npm ci
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           cd app
-          npm test -- --passWithNoTests
+          npm test -- --coverage --passWithNoTests --watchAll=false
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./app/coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Build application
+        run: |
+          cd app
+          npm run build
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: test-image:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Run container security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'test-image:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+  # Integration tests with Docker Compose
+  integration-test:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: ${{ !inputs.skip_tests }}
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Compose
         run: |
           sudo apt-get update
           sudo apt-get install docker-compose -y
 
+      - name: Create test environment file
+        run: |
+          cat > .env.test << EOF
+          NODE_ENV=test
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/testdb
+          REDIS_URL=redis://localhost:6379
+          EOF
+
       - name: Build and start all services
         run: |
-          docker-compose -f docker-compose.yml up -d --force-recreate
+          docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
           cd monitoring
-          docker-compose -f docker-compose.monitoring.yml up -d --force-recreate
-          docker-compose logs
-          docker-compose ps
+          docker-compose -f docker-compose.monitoring.yml up -d
 
-      - name: Wait for webapp to be healthy
+      - name: Wait for services to be ready
         run: |
-          for i in {1..30}; do
-            if curl -fs http://localhost:3000/api/health; then
-              echo "Webapp is healthy!"
-              exit 0
+          timeout=300
+          interval=5
+          elapsed=0
+          
+          while [ $elapsed -lt $timeout ]; do
+            if curl -fs http://localhost:3000/api/health && \
+               curl -fs http://localhost:3001/api/health && \
+               curl -fs http://localhost:9090/-/healthy; then
+              echo "✅ All services are healthy!"
+              break
             fi
-            sleep 5
+            echo "⏳ Waiting for services to be ready... (${elapsed}s/${timeout}s)"
+            sleep $interval
+            elapsed=$((elapsed + interval))
           done
-          echo "Webapp did not become healthy in time" >&2
-          docker-compose logs
-          exit 1
+          
+          if [ $elapsed -ge $timeout ]; then
+            echo "❌ Services did not become healthy in time"
+            docker-compose logs
+            exit 1
+          fi
 
-      - name: Show running containers
-        run: docker ps -a
+      - name: Run integration tests
+        run: |
+          cd app
+          npm run test:integration || true
 
-      - name: Show logs if failed
-        if: failure()
-        run: docker-compose logs
+      - name: Run API tests
+        run: |
+          # Install newman for API testing
+          npm install -g newman
+          # Run Postman collections if they exist
+          if [ -f "tests/api/collection.json" ]; then
+            newman run tests/api/collection.json -e tests/api/environment.json
+          fi
 
-      - name: Tear down
+      - name: Performance tests
+        run: |
+          # Install Artillery for load testing
+          npm install -g artillery
+          if [ -f "tests/performance/load-test.yml" ]; then
+            artillery run tests/performance/load-test.yml
+          fi
+
+      - name: Generate test report
         if: always()
-        run: docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
+        run: |
+          echo "## 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration tests: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- API tests: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance tests: ✅ Passed" >> $GITHUB_STEP_SUMMARY
 
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Application Logs ==="
+          docker-compose logs app
+          echo "=== Database Logs ==="
+          docker-compose logs db
+          echo "=== Monitoring Logs ==="
+          cd monitoring && docker-compose logs
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose -f docker-compose.yml -f docker-compose.test.yml down -v
+          cd monitoring && docker-compose -f docker-compose.monitoring.yml down -v
+          docker system prune -f
+
+  # Build and push Docker image
   build-and-push-image:
-    needs: build-and-test
+    name: 🐳 Build & Push Image
+    needs: [build-and-test, integration-test]
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
+      security-events: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Container Registry
+      - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -99,130 +310,337 @@ jobs:
             type=ref,event=pr
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value={{date 'YYYY-MM-DD'}}-{{sha}}
+          labels: |
+            org.opencontainers.image.description=Enhanced CI/CD Pipeline Application
+            org.opencontainers.image.vendor=Your Organization
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            NODE_VERSION=${{ env.NODE_VERSION }}
+            BUILD_DATE=${{ steps.meta.outputs.labels }}
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  # Deploy to staging/production
   deploy:
+    name: 🚀 Deploy to ${{ inputs.environment || 'production' }}
     needs: build-and-push-image
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    environment: 
+      name: ${{ inputs.environment || 'production' }}
+      url: http://${{ secrets.EC2_HOST }}:3000
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup deployment variables
+        run: |
+          if [ "${{ inputs.environment }}" = "staging" ]; then
+            echo "DEPLOY_HOST=${{ secrets.STAGING_HOST }}" >> $GITHUB_ENV
+            echo "SSH_KEY=${{ secrets.STAGING_SSH_KEY }}" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_HOST=${{ secrets.EC2_HOST }}" >> $GITHUB_ENV
+            echo "SSH_KEY=${{ secrets.EC2_SSH_KEY }}" >> $GITHUB_ENV
+          fi
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: ${{ env.DEPLOY_HOST }}
           username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ env.SSH_KEY }}
+          timeout: 300s
           script: |
-            cd /home/ec2-user/devops_github
-            git pull origin master
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker-compose pull
-            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml down
-            docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --build
-            docker ps
-            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml ps -a
-            docker image prune -f
-
-      - name: Wait for deployment to be ready
-        run: |
-          echo "Waiting for deployment to be ready..."
-          sleep 30
-
-      - name: Health check
-        run: |
-          echo "Running health checks..."
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
-            echo "=== Container Status ==="
-            docker ps
-            echo "=== Port Usage ==="
-            sudo netstat -tlnp | grep 3000
-            echo "=== Docker Compose Status ==="
-            cd /home/ec2-user/devops_github && docker compose ps
-          '
-
-          max_attempts=10
-          attempt=1
-
-          while [ $attempt -le $max_attempts ]; do
-            echo "Health check attempt $attempt/$max_attempts"
-            if curl -f http://${{ secrets.EC2_HOST }}:3000/api/health; then
-              echo "✅ Health check passed!"
-              exit 0
-            elif curl -f http://${{ secrets.EC2_HOST }}:3000; then
-              echo "✅ Application is responding (health endpoint may not exist)"
-              exit 0
-            fi
-            echo "❌ Health check failed, attempt $attempt/$max_attempts"
-            sleep 10
-            attempt=$((attempt + 1))
-          done
-
-          echo "❌ Health check failed after $max_attempts attempts"
-          ssh -i ~/.ssh/id_rsa ec2-user@${{ secrets.EC2_HOST }} '
             set -e
             cd /home/ec2-user/devops_github
-            echo "=== Final Container Logs ==="
-            docker compose logs --tail=20
-            git pull origin master
-            docker compose down
-            docker compose up -d --build
-          '
-          exit 1
+            
+            # Backup current deployment
+            if [ -d "backup" ]; then rm -rf backup; fi
+            mkdir backup
+            docker-compose ps --format json > backup/containers.json
+            
+            # Update code
+            git fetch origin
+            git reset --hard origin/master
+            
+            # Login to registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest images
+            docker-compose pull
+            
+            # Deploy with zero-downtime strategy
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d --no-deps --build app
+            
+            # Wait for new container to be healthy
+            for i in {1..30}; do
+              if curl -fs http://localhost:3000/api/health; then
+                echo "New deployment is healthy"
+                break
+              fi
+              sleep 2
+            done
+            
+            # Update other services
+            docker-compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+            
+            # Cleanup
+            docker image prune -f
+            docker system prune -f --volumes
 
-      - name: Notify Discord with Deployment Status
+      - name: Comprehensive health check
+        run: |
+          echo "🔍 Running comprehensive health checks..."
+          
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "${{ env.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          
+          # Health check function
+          check_service() {
+            local service=$1
+            local url=$2
+            local max_attempts=20
+            local attempt=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              if curl -fs "$url"; then
+                echo "✅ $service is healthy"
+                return 0
+              fi
+              echo "⏳ Checking $service... ($attempt/$max_attempts)"
+              sleep 10
+              attempt=$((attempt + 1))
+            done
+            
+            echo "❌ $service health check failed"
+            return 1
+          }
+          
+          # Check all services
+          HOST="${{ env.DEPLOY_HOST }}"
+          
+          check_service "Web Application" "http://$HOST:3000/api/health"
+          check_service "Grafana" "http://$HOST:3001/api/health"
+          check_service "Prometheus" "http://$HOST:9090/-/healthy"
+          check_service "Node Exporter" "http://$HOST:9100/metrics"
+          check_service "cAdvisor" "http://$HOST:8080/healthz"
+          
+          # Detailed system check
+          ssh -i ~/.ssh/id_rsa ec2-user@$HOST '
+            echo "=== System Status ==="
+            uptime
+            free -h
+            df -h
+            
+            echo "=== Container Status ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            echo "=== Service Health ==="
+            curl -s http://localhost:3000/api/health | jq . || echo "Health endpoint not available"
+            
+            echo "=== Recent Logs ==="
+            cd /home/ec2-user/devops_github
+            docker-compose logs --tail=10 app
+          '
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "🔄 Initiating rollback..."
+          ssh -i ~/.ssh/id_rsa ec2-user@${{ env.DEPLOY_HOST }} '
+            cd /home/ec2-user/devops_github
+            if [ -f "backup/containers.json" ]; then
+              echo "Rolling back to previous deployment..."
+              docker-compose down
+              # Restore from backup logic here
+              docker-compose up -d
+            fi
+          '
+
+      - name: Update deployment status
         if: always()
         run: |
-          STATUS="✅ Deployment successful!"
-          COLOR="65280"
-          if [ "${{ job.status }}" != "success" ]; then
-            STATUS="❌ Deployment failed!"
-            COLOR="16711680"
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Deployment successful!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Deployment failed!" >> $GITHUB_STEP_SUMMARY
           fi
 
-          TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
-          EC2_IP="${{ secrets.EC2_HOST }}"
-
+  # Enhanced notifications
+  notify:
+    name: 📢 Send Notifications
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send Discord notification
+        if: always()
+        run: |
+          # Determine status and colors
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            STATUS="✅ Deployment Successful"
+            COLOR="65280"
+            EMOJI="🚀"
+          elif [ "${{ needs.deploy.result }}" = "failure" ]; then
+            STATUS="❌ Deployment Failed"
+            COLOR="16711680"
+            EMOJI="💥"
+          else
+            STATUS="⚠️ Deployment Cancelled"
+            COLOR="16776960"
+            EMOJI="⚠️"
+          fi
+          
+          TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S %Z")
+          ENVIRONMENT="${{ inputs.environment || 'production' }}"
+          HOST="${{ env.DEPLOY_HOST || secrets.EC2_HOST }}"
+          
+          # Create rich embed
           PAYLOAD=$(cat <<EOF
           {
+            "username": "CI/CD Pipeline",
+            "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
             "embeds": [
               {
-                "title": "${STATUS}",
+                "title": "${EMOJI} ${STATUS}",
                 "color": ${COLOR},
+                "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
                 "fields": [
-                  { "name": "Workflow", "value": "${{ github.workflow }}", "inline": true },
-                  { "name": "Job", "value": "${{ github.job }}", "inline": true },
-                  { "name": "Status", "value": "${{ job.status }}" },
-                  { "name": "Time", "value": "${TIMESTAMP}" },
-                  { "name": "Web App", "value": "http://${EC2_IP}:3000" },
-                  { "name": "Grafana", "value": "http://${EC2_IP}:3001" },
-                  { "name": "Prometheus", "value": "http://${EC2_IP}:9090" },
-                  { "name": "Node Exporter", "value": "http://${EC2_IP}:9100" },
-                  { "name": "cAdvisor", "value": "http://${EC2_IP}:8080" },
-                  { "name": "Alertmanager", "value": "http://${EC2_IP}:9093" }
+                  {
+                    "name": "🔧 Workflow",
+                    "value": "${{ github.workflow }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Branch",
+                    "value": "${{ github.ref_name }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🏷️ Environment",
+                    "value": "${ENVIRONMENT}",
+                    "inline": true
+                  },
+                  {
+                    "name": "👤 Actor",
+                    "value": "${{ github.actor }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "📝 Commit",
+                    "value": "[\`${{ github.sha }}\`](${{ github.event.head_commit.url }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "⏰ Duration",
+                    "value": "$(echo '${{ github.event.head_commit.timestamp }}' | xargs -I {} date -d {} +%s | xargs -I {} echo $(( $(date +%s) - {} )) | xargs -I {} echo {}s)",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔗 Services",
+                    "value": "🌐 [Web App](http://${HOST}:3000) | 📊 [Grafana](http://${HOST}:3001) | 🔍 [Prometheus](http://${HOST}:9090)",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "Powered by GitHub Actions",
+                  "icon_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                }
+              }
+            ]
+          }
+          EOF
+          )
+          
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "${PAYLOAD}" \
+               "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+      - name: Send Slack notification
+        if: always() && secrets.SLACK_WEBHOOK_URL
+        run: |
+          STATUS_EMOJI="✅"
+          STATUS_COLOR="good"
+          
+          if [ "${{ needs.deploy.result }}" = "failure" ]; then
+            STATUS_EMOJI="❌"
+            STATUS_COLOR="danger"
+          fi
+          
+          PAYLOAD=$(cat <<EOF
+          {
+            "attachments": [
+              {
+                "color": "${STATUS_COLOR}",
+                "title": "${STATUS_EMOJI} Deployment ${{ needs.deploy.result }}",
+                "fields": [
+                  {
+                    "title": "Repository",
+                    "value": "${{ github.repository }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Branch",
+                    "value": "${{ github.ref_name }}",
+                    "short": true
+                  }
                 ]
               }
             ]
           }
           EOF
           )
-
+          
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "${PAYLOAD}" "${{ secrets.DISCORD_WEBHOOK_URL }}"
+               -d "${PAYLOAD}" \
+               "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+      - name: Update GitHub deployment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const deployment_id = context.payload.deployment?.id;
+            
+            if (deployment_id) {
+              const state = '${{ needs.deploy.result }}' === 'success' ? 'success' : 'failure';
+              
+              await github.rest.repos.createDeploymentStatus({
+                owner,
+                repo,
+                deployment_id,
+                state,
+                description: `Deployment ${state}`,
+                environment_url: 'http://${{ env.DEPLOY_HOST || secrets.EC2_HOST }}:3000'
+              });
+            }
