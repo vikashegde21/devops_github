@@ -189,22 +189,20 @@ jobs:
           '
           exit 1
 
-      - name: Notify Discord with Deployment Status
-        if: always()
-        run: |
-          STATUS="✅ Deployment successful!"
-          COLOR="65280"
-          if [ "${{ job.status }}" != "success" ]; then
-            STATUS="❌ Deployment failed!"
-            COLOR="16711680"
-          fi
-      
-          TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
-          EC2_IP="${{ secrets.EC2_HOST }}"
-      
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
+- name: Notify Discord with Deployment Status
+  if: always()
+  run: |
+    STATUS="✅ Deployment successful!"
+    COLOR="65280"
+    if [ "${{ job.status }}" != "success" ]; then
+      STATUS="❌ Deployment failed!"
+      COLOR="16711680"
+    fi
+
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M %Z")
+    EC2_IP="${{ secrets.EC2_HOST }}"
+
+    PAYLOAD=$(cat <<EOF
 {
   "embeds": [{
     "title": "${STATUS}",
@@ -224,3 +222,8 @@ jobs:
   }]
 }
 EOF
+)
+
+    curl -H "Content-Type: application/json" \
+         -X POST \
+         -d "${PAYLOAD}" "${{ secrets.DISCORD_WEBHOOK_URL }}"
